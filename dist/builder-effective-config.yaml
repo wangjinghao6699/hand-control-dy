@@ -1,0 +1,27 @@
+directories:
+  output: dist
+  buildResources: build
+appId: com.handcontrol.douyin
+productName: 手势控制抖音
+files:
+  - filter:
+      - main.js
+      - preload.js
+      - control.html
+      - recognition.html
+      - package.json
+      - mediapipe/**/*
+asarUnpack:
+  - mediapipe/**/*
+win:
+  target: nsis
+  icon: null
+mac:
+  target: dmg
+  icon: icon.icns
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: 手势控制抖音
+electronVersion: 28.3.3

@@ -63,18 +63,24 @@ hand-control-dy/
 
 ## 🚀 快速开始
 
-### 环境要求
+### 方式一：直接下载安装包（Windows 用户推荐）
+
+从 [Releases](https://github.com/wangjinghao6699/hand-control-dy/releases) 页面下载最新版 `手势控制抖音 Setup 1.0.0.exe`，双击安装即可使用。
+
+> 安装包已集成 Node.js 运行时和所有依赖，无需额外安装任何环境。
+
+### 方式二：从源码运行
+
+**环境要求**
 
 - **Node.js** ≥ 18
 - **摄像头**（内置或外接 USB）
 - **Chrome / Edge 浏览器**
 - **Windows** / macOS / Linux
 
-### 安装与运行
-
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/你的用户名/hand-control-dy.git
+git clone https://github.com/wangjinghao6699/hand-control-dy.git
 cd hand-control-dy
 
 # 2. 安装依赖
@@ -102,6 +108,10 @@ npm start
 ---
 
 ## 📦 打包发布
+
+预编译安装包可在 [Releases](https://github.com/wangjinghao6699/hand-control-dy/releases) 页面下载。
+
+如需自行打包：
 
 ```bash
 # Windows

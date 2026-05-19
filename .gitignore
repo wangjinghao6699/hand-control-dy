@@ -1,6 +1,10 @@
 node_modules/
-dist/
+dist/win-unpacked/
 .idea/
+*.pptx
+*.docx
+generate_ppt.py
+generate_report.py
 *.log
 .DS_Store
 Thumbs.db
