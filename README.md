@@ -138,6 +138,24 @@ MIT License · 详见 [LICENSE](LICENSE)
 
 ---
 
+## 📚 参考文献
+
+[1] Zhang F, Bazarevsky V, Vakunov A, et al. **MediaPipe Hands: On-device Real-time Hand Tracking** [C]. *CVPR Workshop on Computer Vision for Augmented and Virtual Reality*, 2020.
+
+[2] Lugaresi C, Tang J, Nash H, et al. **MediaPipe: A Framework for Building Perception Pipelines** [J]. *arXiv preprint*, arXiv:1906.08172, 2019.
+
+[3] Google LLC. **MediaPipe Hands Solution** [EB/OL]. https://developers.google.com/mediapipe/solutions/vision/hand_landmarker, 2023.
+
+[4] OpenJS Foundation. **Electron Framework** [EB/OL]. https://www.electronjs.org/, 2024.
+
+[5] Google LLC. **Chrome DevTools Protocol** [EB/OL]. https://chromedevtools.github.io/devtools-protocol/, 2024.
+
+[6] Hunter J D. **Matplotlib: A 2D Graphics Environment** [J]. *Computing in Science & Engineering*, 2007, 9(3): 90-95.
+
+[7] W3C. **Media Capture and Streams** [EB/OL]. https://www.w3.org/TR/mediacapture-streams/, 2023.
+
+---
+
 ## ⚠️ 免责声明
 
 本项目仅供学习和研究使用。使用本软件操控抖音可能违反抖音的服务条款，请自行承担风险。开发者不对任何账号封禁或其他后果负责。
