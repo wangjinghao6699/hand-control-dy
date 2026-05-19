@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>手势识别</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    background: #0a0a1a;
+    color: #e0e0e0;
+    overflow: hidden;
+    user-select: none;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .camera-container {
+    position: relative;
+    flex: 1;
+    background: #000;
+    margin: 4px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid #2a2a4a;
+  }
+  .camera-container video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+  }
+  .camera-container canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    transform: scaleX(-1);
+  }
+  .hud {
+    position: absolute;
+    top: 8px; left: 8px; right: 8px;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .hud .current-gesture {
+    font-size: 28px;
+    font-weight: 700;
+    text-align: center;
+    padding: 8px;
+    background: rgba(0,0,0,0.7);
+    border-radius: 8px;
+    text-shadow: 0 0 10px rgba(0,0,0,0.8);
+  }
+  .hud .confidence-bar {
+    margin-top: 8px;
+    height: 6px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .hud .confidence-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #25f4ee, #fe2c55);
+    transition: width 0.2s;
+  }
+  .status-bar {
+    position: absolute;
+    bottom: 8px; left: 8px; right: 8px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    padding: 6px 10px;
+    background: rgba(0,0,0,0.7);
+    border-radius: 6px;
+    pointer-events: none;
+  }
+  .status-bar .fps { color: #25f4ee; }
+  .status-bar .gesture-count { color: #fe2c55; }
+</style>
+</head>
+<body>
+<div class="camera-container">
+  <video id="video" playsinline></video>
+  <canvas id="output_canvas"></canvas>
+  <div class="hud">
+    <div class="current-gesture" id="currentGesture">等待手势...（请先录制模板）</div>
+    <div class="confidence-bar">
+      <div class="confidence-fill" id="confidenceFill" style="width: 0%"></div>
+    </div>
+  </div>
+  <div class="status-bar">
+    <span class="fps" id="fpsDisplay">FPS: --</span>
+    <span class="gesture-count" id="gestureCount">模板: 0</span>
+  </div>
+</div>
+
+<script src="mediapipe/hands/hands.js"></script>
+<script src="mediapipe/drawing_utils/drawing_utils.js"></script>
+<script>
+const CONFIG = {
+  emaAlpha: 0.45,
+  matchThreshold: 0.25,
+  confirmFrames: 4,
+  cooldownMs: 1500,
+  hysteresisMargin: 0.15,   // 切换手势需要分数比当前好15%以上
+};
+
+let gestureTemplates = {};
+let emaHistory = null;
+let currentGesture = null;
+let currentScore = Infinity;
+let confirmCount = 0;
+let lastActionTime = 0;
+let fps = 0;
+let frameCount = 0;
+let lastFpsTime = performance.now();
+
+function loadTemplates() {
+  try {
+    const raw = localStorage.getItem('hand_control_templates');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // 只保留有效模板（必须包含 landmarks 数组）
+      for (const [action, t] of Object.entries(parsed)) {
+        if (t.landmarks && t.landmarks.length > 0) {
+          gestureTemplates[action] = t.landmarks;
+        }
+      }
+      document.getElementById('gestureCount').textContent = `模板: ${Object.keys(gestureTemplates).length}`;
+      console.log('[识别窗口] 已加载模板:', Object.keys(gestureTemplates));
+    } else {
+      console.log('[识别窗口] 无自定义模板，请在控制面板录制手势后再启动识别');
+    }
+  } catch (e) {
+    console.error('[识别窗口] 加载模板失败:', e);
+  }
+}
+
+function emaSmoothLandmarks(landmarks) {
+  if (!landmarks || landmarks.length < 21) return landmarks;
+  if (!emaHistory || emaHistory.length !== landmarks.length) {
+    emaHistory = landmarks.map(p => ({ x: p.x, y: p.y, z: p.z }));
+    return landmarks;
+  }
+  const alpha = CONFIG.emaAlpha;
+  const smoothed = [];
+  for (let i = 0; i < landmarks.length; i++) {
+    emaHistory[i].x += alpha * (landmarks[i].x - emaHistory[i].x);
+    emaHistory[i].y += alpha * (landmarks[i].y - emaHistory[i].y);
+    emaHistory[i].z += alpha * (landmarks[i].z - emaHistory[i].z);
+    smoothed.push({ x: emaHistory[i].x, y: emaHistory[i].y, z: emaHistory[i].z });
+  }
+  return smoothed;
+}
+
+function computeSimilarity(a, b) {
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) {
+    sum += (a[i].x - b[i].x) ** 2 + (a[i].y - b[i].y) ** 2;
+  }
+  return Math.sqrt(sum / a.length);
+}
+
+// 与控制面板使用完全一致的归一化算法（腕关节基准）
+function normalizeLandmarks(landmarks) {
+  if (!landmarks || landmarks.length === 0) return null;
+  const wrist = landmarks[0];
+  const midMcp = landmarks[9];
+  let scale = Math.hypot(midMcp.x - wrist.x, midMcp.y - wrist.y, midMcp.z - wrist.z);
+  if (scale < 0.01) scale = 0.01;
+  return landmarks.map(p => ({
+    x: (p.x - wrist.x) / scale,
+    y: (p.y - wrist.y) / scale,
+    z: (p.z - wrist.z) / scale
+  }));
+}
+
+// ========== 模板匹配（仅使用用户录制的模板，无启发式回退）==========
+function findBestMatch(landmarks) {
+  const currentNorm = normalizeLandmarks(landmarks);
+  if (!currentNorm) return null;
+
+  // 无模板时不做任何匹配
+  if (Object.keys(gestureTemplates).length === 0) return null;
+
+  let bestScore = Infinity;
+  let bestAction = null;
+
+  for (const action in gestureTemplates) {
+    const template = gestureTemplates[action];
+    if (!template || template.length === 0) continue;
+    const score = computeSimilarity(currentNorm, template);
+    if (score < bestScore) {
+      bestScore = score;
+      bestAction = action;
+    }
+  }
+
+  if (bestAction && bestScore < CONFIG.matchThreshold) {
+    const confidence = Math.max(0, 1 - bestScore / CONFIG.matchThreshold);
+    return { action: bestAction, score: bestScore, confidence: confidence };
+  }
+  return null;
+}
+
+const ACTION_LABELS = {
+  up: '⬆️ 上一个', down: '⬇️ 下一个', space: '⏯️ 暂停',
+  like: '👍 点赞', collect: '⭐ 收藏', comment: '💬 评论', follow: '➕ 关注', follow_home: '🏠 作者主页'
+};
+
+function updateHUD(matchInfo) {
+  const gestureEl = document.getElementById('currentGesture');
+  const fillEl = document.getElementById('confidenceFill');
+  
+  if (matchInfo) {
+    const confidence = matchInfo.confidence || (1 - matchInfo.score);
+    const pct = Math.round(confidence * 100);
+    gestureEl.textContent = ACTION_LABELS[matchInfo.action] || matchInfo.action;
+    fillEl.style.width = pct + '%';
+  } else {
+    gestureEl.textContent = '等待手势...';
+    fillEl.style.width = '0%';
+  }
+}
+
+function sendAction(action) {
+  if (window.handControlAPI && window.handControlAPI.sendGesture) {
+    window.handControlAPI.sendGesture(action);
+  }
+}
+
+async function startRecognition() {
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('output_canvas');
+  const ctx = canvas.getContext('2d');
+
+  loadTemplates();
+
+  const hands = new Hands({
+    locateFile: (file) => `mediapipe/hands/${file}`
+  });
+  hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.5 });
+
+  hands.onResults((results) => {
+    frameCount++;
+    const now = performance.now();
+    if (now - lastFpsTime >= 1000) {
+      fps = frameCount;
+      frameCount = 0;
+      lastFpsTime = now;
+      document.getElementById('fpsDisplay').textContent = `FPS: ${fps}`;
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+      const rawLandmarks = results.multiHandLandmarks[0];
+      const landmarks = emaSmoothLandmarks(rawLandmarks);
+      
+      drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: 'rgba(37,244,238,0.6)', lineWidth: 2 });
+      drawLandmarks(ctx, landmarks, { color: '#fe2c55', lineWidth: 1, radius: 3 });
+
+      const match = findBestMatch(landmarks);
+      if (match) {
+        // 防抖：新手势必须明显更好才切换（分数低15%以上）
+        if (match.action === currentGesture) {
+          confirmCount++;
+          currentScore = match.score;
+        } else if (!currentGesture || match.score < currentScore * (1 - CONFIG.hysteresisMargin)) {
+          // 新手势显著更优 → 切换追踪
+          currentGesture = match.action;
+          currentScore = match.score;
+          confirmCount = 1;
+        }
+        // 否则忽略此帧（噪音），不增减计数，防止打断连续确认
+
+        if (confirmCount >= CONFIG.confirmFrames) {
+          const now = Date.now();
+          if (now - lastActionTime > CONFIG.cooldownMs) {
+            console.log('[识别窗口] 触发动作:', currentGesture, '确认帧数:', confirmCount);
+            sendAction(currentGesture);
+            lastActionTime = now;
+            confirmCount = 0;
+          }
+        }
+        updateHUD(match);
+      } else {
+        currentGesture = null;
+        currentScore = Infinity;
+        confirmCount = 0;
+        updateHUD(null);
+      }
+    } else {
+      currentGesture = null;
+      currentScore = Infinity;
+      confirmCount = 0;
+      updateHUD(null);
+    }
+  });
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' }
+    });
+    video.srcObject = stream;
+    await video.play();
+
+    // 使用安全的 RAF 帧循环（避免 Camera 工具的帧堆积问题）
+    let frameProcessing = false;
+    function frameLoop() {
+      if (hands && video && video.readyState >= 2 && !frameProcessing) {
+        frameProcessing = true;
+        hands.send({ image: video }).then(function() {
+          frameProcessing = false;
+        }).catch(function() {
+          frameProcessing = false;
+        });
+      }
+      requestAnimationFrame(frameLoop);
+    }
+    requestAnimationFrame(frameLoop);
+
+    console.log('[识别窗口] 摄像头启动成功（RAF模式）');
+  } catch (e) {
+    console.error('[识别窗口] 摄像头启动失败:', e);
+    document.getElementById('currentGesture').textContent = '⚠️ 摄像头错误';
+  }
+}
+
+startRecognition();
+</script>
+</body>
+</html>

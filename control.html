@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>手势控制面板</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    background: #0f0f23;
+    color: #e0e0e0;
+    user-select: none;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* ====== 滚动容器 ====== */
+  .scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  /* 美化滚动条 */
+  .scroll-area::-webkit-scrollbar { width: 6px; }
+  .scroll-area::-webkit-scrollbar-track { background: #0a0a1a; }
+  .scroll-area::-webkit-scrollbar-thumb { background: #3a3a5a; border-radius: 3px; }
+  .scroll-area::-webkit-scrollbar-thumb:hover { background: #6c5ce7; }
+  .header {
+    padding: 10px 14px;
+    background: linear-gradient(135deg, #1a1a3e 0%, #16213e 100%);
+    border-bottom: 1px solid #2a2a4a;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .header h2 {
+    font-size: 15px;
+    font-weight: 600;
+    background: linear-gradient(90deg, #fe2c55, #25f4ee);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .header .badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #fe2c55;
+    color: #fff;
+  }
+  .camera-container {
+    position: relative;
+    flex: 0 0 200px;
+    min-height: 180px;
+    background: #000;
+    margin: 8px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 2px solid #2a2a4a;
+  }
+  .camera-container video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+  }
+  .camera-container canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    transform: scaleX(-1);
+  }
+  .camera-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: #666;
+    pointer-events: none;
+  }
+  .status-bar {
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .status-dot.active { background: #00e676; box-shadow: 0 0 6px #00e676; }
+  .status-dot.inactive { background: #ff5252; box-shadow: 0 0 6px #ff5252; }
+  .status-dot.warning { background: #ffab00; box-shadow: 0 0 6px #ffab00; }
+  .match-indicator {
+    margin: 0 8px;
+    padding: 6px 12px;
+    background: #1a1a3e;
+    border-radius: 6px;
+    text-align: center;
+    font-size: 18px;
+    flex-shrink: 0;
+    transition: all 0.15s;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .mapping-panel {
+    margin: 0 8px;
+    padding: 6px;
+    background: #14142b;
+    border-radius: 8px;
+    flex-shrink: 0;
+  }
+  .mapping-title {
+    font-size: 10px;
+    color: #888;
+    padding: 2px 8px 4px;
+    letter-spacing: 1px;
+  }
+  .action-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 6px;
+    margin: 1px 0;
+    background: #1a1a35;
+    border-radius: 5px;
+    transition: all 0.15s;
+  }
+  .action-row:hover { background: #222248; }
+  .action-row .icon { font-size: 16px; width: 26px; text-align: center; flex-shrink: 0; }
+  .action-row .label {
+    font-size: 11px;
+    color: #ccc;
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .action-row .status-tag {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    min-width: 52px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .status-tag.empty { background: #2a2a4a; color: #666; }
+  .status-tag.recorded { background: #0d3b2e; color: #00e676; }
+  .status-tag.recording { background: #4a1a1a; color: #fe2c55; animation: pulse 0.5s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+  .btn-sm {
+    padding: 4px 10px;
+    border: none;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    color: #fff;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .btn-record { background: #6c5ce7; }
+  .btn-record:hover { background: #7c6cf7; }
+  .btn-record.recording { background: #fe2c55; pointer-events: none; }
+  .btn-clear { background: #3a3a5a; }
+  .btn-clear:hover { background: #ff5252; }
+  .countdown-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 64px;
+    font-weight: 700;
+    color: #fe2c55;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .countdown-overlay.hidden { display: none; }
+  .controls {
+    padding: 8px 14px 12px;
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .btn {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    color: #fff;
+    transition: all 0.15s;
+  }
+  .btn-toggle { background: #6c5ce7; }
+  .btn-toggle:hover { background: #7c6cf7; }
+  .btn-toggle.off { background: #ff5252; }
+  .btn-reset { background: #3a3a5a; }
+  .btn-reset:hover { background: #ff5252; }
+  .log-area {
+    min-height: 100px;
+    margin: 0 8px 8px;
+    padding: 8px;
+    background: #0a0a1a;
+    border-radius: 8px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11px;
+    overflow-y: auto;
+    border: 1px solid #2a2a4a;
+    flex-shrink: 0;
+  }
+  .log-line { margin: 2px 0; word-break: break-all; }
+  .log-line.good { color: #00e676; }
+  .log-line.warn { color: #ffab00; }
+  .log-line.error { color: #ff5252; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h2>🖐 手势录制面板</h2>
+  <span class="badge" id="fpsBadge">-- FPS</span>
+</div>
+
+<div class="status-bar">
+  <span class="status-dot" id="statusDot"></span>
+  <span id="statusText">初始化中...</span>
+</div>
+
+<div class="scroll-area">
+
+<div class="camera-container" id="cameraContainer">
+  <video id="video" playsinline autoplay muted></video>
+  <canvas id="canvas"></canvas>
+  <div class="camera-placeholder" id="cameraPlaceholder">📷 摄像头未就绪</div>
+  <div class="countdown-overlay hidden" id="countdownOverlay"></div>
+</div>
+
+<div class="match-indicator" id="matchIndicator">
+  <span id="matchIcon">🎥</span>
+  <span id="matchLabel">点击「启动识别」开始</span>
+</div>
+
+<div class="mapping-panel" id="mappingPanel">
+  <div class="mapping-title">📋 自定义手势录制（录制后模板自动保存）</div>
+  <div class="action-row" data-action="up">
+    <span class="icon">⬆️</span>
+    <span class="label">上一个视频</span>
+    <span class="status-tag empty" id="status-up">未录制</span>
+    <button class="btn-sm btn-record" id="record-up">🎬 录制</button>
+    <button class="btn-sm btn-clear" id="clear-up">清除</button>
+  </div>
+  <div class="action-row" data-action="down">
+    <span class="icon">⬇️</span>
+    <span class="label">下一个视频</span>
+    <span class="status-tag empty" id="status-down">未录制</span>
+    <button class="btn-sm btn-record" id="record-down">🎬 录制</button>
+    <button class="btn-sm btn-clear" id="clear-down">清除</button>
+  </div>
+  <div class="action-row" data-action="space">
+    <span class="icon">⏯️</span>
+    <span class="label">播放/暂停</span>
+    <span class="status-tag empty" id="status-space">未录制</span>
+    <button class="btn-sm btn-record" id="record-space">🎬 录制</button>
+    <button class="btn-sm btn-clear" id="clear-space">清除</button>
+  </div>
+  <div class="action-row" data-action="like">
+    <span class="icon">❤️</span>
+    <span class="label">点赞</span>
+    <span class="status-tag empty" id="status-like">未录制</span>
+    <button class="btn-sm btn-record" id="record-like">🎬 录制</button>
+    <button class="btn-sm btn-clear" id="clear-like">清除</button>
+  </div>
+  <div class="action-row" data-action="collect">
+    <span class="icon">⭐</span>
+    <span class="label">收藏</span>
+    <span class="status-tag empty" id="status-collect">未录制</span>
+    <button class="btn-sm btn-record" id="record-collect">🎬 录制</button>
+    <button class="btn-sm btn-clear" id="clear-collect">清除</button>
+  </div>
+  <div class="action-row" data-action="comment">
+    <span class="icon">💬</span>
+    <span class="label">评论</span>
+    <span class="status-tag empty" id="status-comment">未录制</span>
+    <button class="btn-sm btn-record" id="record-comment">🎬 录制</button>
+    <button class="btn-sm btn-clear" id="clear-comment">清除</button>
+  </div>
+  <div class="action-row" data-action="follow">
+    <span class="icon">➕</span>
+    <span class="label">关注作者</span>
+    <span class="status-tag empty" id="status-follow">未录制</span>
+    <button class="btn-sm btn-record" id="record-follow">🎬 录制</button>
+    <button class="btn-sm btn-clear" id="clear-follow">清除</button>
+  </div>
+  <div class="action-row" data-action="follow_home">
+    <span class="icon">🏠</span>
+    <span class="label">作者主页</span>
+    <span class="status-tag empty" id="status-follow_home">未录制</span>
+    <button class="btn-sm btn-record" id="record-follow_home">🎬 录制</button>
+    <button class="btn-sm btn-clear" id="clear-follow_home">清除</button>
+  </div>
+</div>
+
+<div class="controls">
+  <button class="btn btn-toggle" id="btnToggleRecognition">🎥 启动识别</button>
+  <button class="btn btn-reset" id="btnReset">🔄 重置全部</button>
+</div>
+
+<div class="log-area" id="logArea">
+  <div class="log-line">[系统] 正在初始化...</div>
+</div>
+
+</div><!-- /scroll-area -->
+
+<script src="mediapipe/camera_utils/camera_utils.js"></script>
+<script src="mediapipe/drawing_utils/drawing_utils.js"></script>
+<script src="mediapipe/hands/hands.js"></script>
+
+<script>
+// DOM 引用
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const btnToggleRecognition = document.getElementById('btnToggleRecognition');
+const btnReset = document.getElementById('btnReset');
+const fpsBadge = document.getElementById('fpsBadge');
+const logArea = document.getElementById('logArea');
+const cameraPlaceholder = document.getElementById('cameraPlaceholder');
+const countdownOverlay = document.getElementById('countdownOverlay');
+const matchIcon = document.getElementById('matchIcon');
+const matchLabel = document.getElementById('matchLabel');
+
+// 全局状态
+let hands = null;
+let frameCount = 0;
+let fpsTime = Date.now();
+let isRecognitionOpen = false;
+let gestureTemplates = {};
+let recording = null;
+
+const CONFIG = {
+  recordDurationMs: 1200,
+  countdownSeconds: 3,
+};
+
+const ALL_ACTIONS = ['up', 'down', 'space', 'like', 'collect', 'comment', 'follow', 'follow_home'];
+const ACTION_NAMES = { up: '上一个视频', down: '下一个视频', space: '播放/暂停', like: '点赞', collect: '收藏', comment: '评论', follow: '关注作者', follow_home: '作者主页' };
+const ACTION_ICONS = { up: '⬆️', down: '⬇️', space: '⏯️', like: '❤️', collect: '⭐', comment: '💬', follow: '➕', follow_home: '🏠' };
+
+// localStorage 持久化
+function loadTemplates() {
+  try {
+    const raw = localStorage.getItem('hand_control_templates');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      for (const [action, t] of Object.entries(parsed)) {
+        if (t.landmarks && t.landmarks.length > 0) gestureTemplates[action] = t;
+      }
+    }
+  } catch(e) { console.warn('加载模板失败:', e); }
+}
+
+function saveTemplates() {
+  try {
+    localStorage.setItem('hand_control_templates', JSON.stringify(gestureTemplates));
+  } catch(e) { console.warn('保存模板失败:', e); }
+}
+
+function updateAllStatusTags() {
+  for (const action of ALL_ACTIONS) {
+    const tag = document.getElementById('status-' + action);
+    if (!tag) continue;
+    if (gestureTemplates[action]) {
+      tag.textContent = '✓ 已录制';
+      tag.className = 'status-tag recorded';
+    } else {
+      tag.textContent = '未录制';
+      tag.className = 'status-tag empty';
+    }
+  }
+}
+
+// 日志系统
+function log(msg, type) {
+  const div = document.createElement('div');
+  div.className = 'log-line ' + (type || '');
+  div.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+  logArea.appendChild(div);
+  logArea.scrollTop = logArea.scrollHeight;
+}
+
+function updateStatus(type, text) {
+  statusDot.className = 'status-dot ' + type;
+  statusText.textContent = text;
+}
+
+// 绘制手部骨架
+function drawHandLandmarks(landmarks) {
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: 'rgba(37,244,238,0.6)', lineWidth: 2 });
+  drawLandmarks(ctx, landmarks, { color: '#fe2c55', lineWidth: 1, radius: 3 });
+}
+
+// 录制系统
+function startRecording(action) {
+  if (recording) return;
+
+  recording = {
+    action: action,
+    countdown: CONFIG.countdownSeconds,
+    countdownStart: Date.now(),
+    captureFrames: [],
+    icon: ACTION_ICONS[action] || '🖐'
+  };
+
+  const btn = document.getElementById('record-' + action);
+  if (btn) { btn.textContent = '⏳ ' + CONFIG.countdownSeconds; btn.classList.add('recording'); }
+
+  const tag = document.getElementById('status-' + action);
+  if (tag) { tag.textContent = '录制中...'; tag.className = 'status-tag recording'; }
+
+  log('🎬 开始录制「' + (ACTION_NAMES[action] || action) + '」手势，' + CONFIG.countdownSeconds + ' 秒后采集...', 'warn');
+  updateStatus('warning', '录制中：' + (ACTION_NAMES[action] || action));
+
+  requestAnimationFrame(countdownLoop);
+}
+
+function countdownLoop() {
+  if (!recording) return;
+
+  const elapsed = Date.now() - recording.countdownStart;
+  const remaining = Math.ceil((CONFIG.countdownSeconds * 1000 - elapsed) / 1000);
+
+  if (remaining > 0) {
+    countdownOverlay.textContent = remaining;
+    countdownOverlay.classList.remove('hidden');
+
+    const btn = document.getElementById('record-' + recording.action);
+    if (btn) btn.textContent = '⏳ ' + remaining;
+
+    requestAnimationFrame(countdownLoop);
+  } else {
+    countdownOverlay.textContent = '✋ 保持!';
+    recording.captureStart = Date.now();
+    recording.capturing = true;
+    requestAnimationFrame(captureLoop);
+  }
+}
+
+function captureLoop() {
+  if (!recording || !recording.capturing) return;
+
+  const elapsed = Date.now() - recording.captureStart;
+  if (elapsed < CONFIG.recordDurationMs) {
+    countdownOverlay.textContent = '✋ 保持手势...';
+    countdownOverlay.classList.remove('hidden');
+    requestAnimationFrame(captureLoop);
+  } else {
+    finishRecording();
+  }
+}
+
+function normalizeLandmarks(landmarks) {
+  if (!landmarks || landmarks.length === 0) return null;
+  const wrist = landmarks[0];
+  const midMcp = landmarks[9];
+  let scale = Math.hypot(midMcp.x - wrist.x, midMcp.y - wrist.y, midMcp.z - wrist.z);
+  if (scale < 0.01) scale = 0.01;
+
+  return landmarks.map(p => ({
+    x: (p.x - wrist.x) / scale,
+    y: (p.y - wrist.y) / scale,
+    z: (p.z - wrist.z) / scale
+  }));
+}
+
+function averageLandmarks(frames) {
+  if (!frames || frames.length === 0) return null;
+  const count = frames[0].length;
+  const result = [];
+  for (let i = 0; i < count; i++) {
+    let sx = 0, sy = 0, sz = 0;
+    for (let f = 0; f < frames.length; f++) {
+      sx += frames[f][i].x;
+      sy += frames[f][i].y;
+      sz += frames[f][i].z;
+    }
+    result.push({ x: sx / frames.length, y: sy / frames.length, z: sz / frames.length });
+  }
+  return result;
+}
+
+function finishRecording() {
+  if (!recording) return;
+
+  const action = recording.action;
+  const frames = recording.captureFrames;
+  countdownOverlay.classList.add('hidden');
+
+  const btn = document.getElementById('record-' + action);
+  if (btn) { btn.textContent = '🎬 录制'; btn.classList.remove('recording'); }
+
+  if (frames.length < 5) {
+    const tag = document.getElementById('status-' + action);
+    if (tag) { tag.textContent = '失败'; tag.className = 'status-tag empty'; }
+    log('❌ 录制失败：采集到的帧数不足（' + frames.length + '），请确保手在摄像头前', 'warn');
+    updateStatus('active', '录制失败，请重试');
+    recording = null;
+    return;
+  }
+
+  const normalizedFrames = [];
+  for (let i = 0; i < frames.length; i++) {
+    const n = normalizeLandmarks(frames[i]);
+    if (n) normalizedFrames.push(n);
+  }
+
+  if (normalizedFrames.length < 3) {
+    const tag2 = document.getElementById('status-' + action);
+    if (tag2) { tag2.textContent = '失败'; tag2.className = 'status-tag empty'; }
+    log('❌ 录制失败：归一化后帧数不足', 'warn');
+    updateStatus('active', '录制失败，请重试');
+    recording = null;
+    return;
+  }
+
+  const template = averageLandmarks(normalizedFrames);
+
+  gestureTemplates[action] = {
+    name: ACTION_NAMES[action] || action,
+    landmarks: template,
+    icon: recording.icon
+  };
+
+  saveTemplates();
+  updateAllStatusTags();
+  log('✅「' + (ACTION_NAMES[action] || action) + '」手势已录制！采集 ' + normalizedFrames.length + ' 帧', 'good');
+  updateStatus('active', '✅ 录制就绪');
+  recording = null;
+}
+
+function captureLandmark(landmarks) {
+  if (!recording || !recording.capturing) return;
+  if (!landmarks || landmarks.length < 21) return;
+  recording.captureFrames.push(landmarks.map(p => ({ x: p.x, y: p.y, z: p.z })));
+}
+
+function clearTemplate(action) {
+  delete gestureTemplates[action];
+  saveTemplates();
+  updateAllStatusTags();
+  log('🗑 已清除「' + (ACTION_NAMES[action] || action) + '」手势模板', 'warn');
+}
+
+// MediaPipe 结果处理
+function onHandsResults(results) {
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    const landmarks = results.multiHandLandmarks[0];
+    drawHandLandmarks(landmarks);
+
+    if (recording && recording.capturing) {
+      captureLandmark(landmarks);
+    }
+  }
+
+  // FPS
+  frameCount++;
+  const now = Date.now();
+  if (now - fpsTime >= 1000) {
+    const fps = Math.round(frameCount / ((now - fpsTime) / 1000));
+    fpsBadge.textContent = fps + ' FPS';
+    frameCount = 0;
+    fpsTime = now;
+  }
+}
+
+// 摄像头初始化
+async function initCamera() {
+  try {
+    updateStatus('warning', '正在请求摄像头权限...');
+    log('正在请求摄像头权限...', 'warn');
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 }, facingMode: 'user' },
+      audio: false,
+    });
+
+    video.srcObject = stream;
+    await video.play();
+    cameraPlaceholder.style.display = 'none';
+    updateStatus('active', '摄像头已就绪');
+    log('摄像头已就绪', 'good');
+    return true;
+  } catch (err) {
+    updateStatus('inactive', '摄像头访问失败');
+    log('摄像头访问失败: ' + err.message, 'warn');
+    cameraPlaceholder.textContent = '摄像头访问被拒绝，请在系统设置中允许';
+    cameraPlaceholder.style.display = 'flex';
+    return false;
+  }
+}
+
+// MediaPipe 初始化
+async function initMediaPipe() {
+  try {
+    updateStatus('warning', '正在加载手势识别模型...');
+    log('正在加载 MediaPipe Hands 模型...', 'warn');
+
+    hands = new Hands({
+      locateFile: (file) => `mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.6,
+    });
+
+    hands.onResults(onHandsResults);
+    await hands.initialize();
+
+    // 启动帧循环：持续向 MediaPipe 发送视频帧（录制时采集关键点）
+    let frameProcessing = false;
+    function frameLoop() {
+      if (hands && video && video.readyState >= 2 && !frameProcessing) {
+        frameProcessing = true;
+        hands.send({ image: video }).then(function() {
+          frameProcessing = false;
+        }).catch(function() {
+          frameProcessing = false;
+        });
+      }
+      requestAnimationFrame(frameLoop);
+    }
+    requestAnimationFrame(frameLoop);
+    log('帧循环已启动（RAF模式）', 'good');
+
+    updateStatus('active', '手势识别就绪');
+    log('MediaPipe Hands 模型加载完成', 'good');
+    return true;
+  } catch (err) {
+    updateStatus('inactive', '模型加载失败');
+    log('模型加载失败: ' + err.message, 'warn');
+    return false;
+  }
+}
+
+// 启动识别按钮
+btnToggleRecognition.addEventListener('click', async function() {
+  if (isRecognitionOpen) {
+    if (window.handControlAPI) {
+      window.handControlAPI.closeRecognition();
+    }
+    btnToggleRecognition.textContent = '🎥 启动识别';
+    btnToggleRecognition.classList.remove('off');
+    matchIcon.textContent = '🎥';
+    matchLabel.textContent = '点击「启动识别」开始';
+    isRecognitionOpen = false;
+    log('识别窗口已关闭', 'warn');
+  } else {
+    if (window.handControlAPI) {
+      window.handControlAPI.toggleRecognition();
+    }
+    btnToggleRecognition.textContent = '⏹ 停止识别';
+    btnToggleRecognition.classList.add('off');
+    matchIcon.textContent = '✅';
+    matchLabel.textContent = '识别窗口运行中';
+    isRecognitionOpen = true;
+    log('识别窗口已启动', 'good');
+  }
+});
+
+// 重置按钮
+btnReset.addEventListener('click', async function() {
+  log('正在重置...', 'warn');
+  if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
+  recording = null;
+  gestureTemplates = {};
+  saveTemplates();
+  updateAllStatusTags();
+  countdownOverlay.classList.add('hidden');
+  matchIcon.textContent = '🎥';
+  matchLabel.textContent = '点击「启动识别」开始';
+
+  const camOk = await initCamera();
+  if (camOk) {
+    updateStatus('active', '就绪');
+    log('重置完成', 'good');
+  }
+});
+
+// 录制按钮事件
+for (const action of ALL_ACTIONS) {
+  const recBtn = document.getElementById('record-' + action);
+  const clrBtn = document.getElementById('clear-' + action);
+  if (recBtn) recBtn.addEventListener('click', () => startRecording(action));
+  if (clrBtn) clrBtn.addEventListener('click', () => clearTemplate(action));
+}
+
+// IPC 状态监听
+if (window.handControlAPI) {
+  window.handControlAPI.onStatusUpdate(function(status) {
+    log(status, 'good');
+    updateStatus('active', status);
+  });
+}
+
+// 启动流程
+async function bootstrap() {
+  log('手势录制面板 v4.0 启动中...', 'good');
+  updateStatus('warning', '初始化中...');
+
+  loadTemplates();
+  updateAllStatusTags();
+  const templateCount = Object.keys(gestureTemplates).length;
+  
+  const checkResult = [
+    '=== 启动自检 ===',
+    '摄像头: 待检测',
+    '手势模板: ' + templateCount + ' 个自定义模板',
+    '动作槽位: ' + ALL_ACTIONS.length + ' 个（上/下/暂停/点赞/收藏/评论/关注/作者主页）',
+    '提示: 点击「启动识别」打开独立识别窗口'
+  ];
+  log(checkResult.join('\n'), 'good');
+
+  const camOk = await initCamera();
+  if (!camOk) {
+    updateStatus('inactive', '摄像头不可用');
+    matchIcon.textContent = '⚠️';
+    matchLabel.textContent = '摄像头不可用';
+    return;
+  }
+
+  const mpOk = await initMediaPipe();
+  if (!mpOk) {
+    updateStatus('inactive', '模型加载失败');
+    matchIcon.textContent = '⚠️';
+    matchLabel.textContent = '模型加载失败';
+    return;
+  }
+
+  updateStatus('active', '✅ 录制就绪');
+  matchIcon.textContent = '🎥';
+  matchLabel.textContent = '点击「启动识别」开始';
+  log('系统就绪！录制自定义手势，或点击「启动识别」使用内置手势', 'good');
+}
+
+window.addEventListener('DOMContentLoaded', function() {
+  // 监听识别窗口关闭事件，更新控制面板UI
+  if (window.handControlAPI && window.handControlAPI.onRecognitionClosed) {
+    window.handControlAPI.onRecognitionClosed(function() {
+      isRecognitionOpen = false;
+      btnToggleRecognition.textContent = '🎥 启动识别';
+      btnToggleRecognition.classList.remove('off');
+      matchIcon.textContent = '🎥';
+      matchLabel.textContent = '识别窗口已关闭';
+      log('识别窗口已关闭', 'warn');
+    });
+  }
+
+  setTimeout(bootstrap, 500);
+});
+
+window.addEventListener('beforeunload', function() {
+  if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); }
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,55 @@
+{
+  "name": "hand-control-dy",
+  "version": "1.0.0",
+  "description": "手势控制抖音网页版 - Electron桌面应用",
+  "main": "main.js",
+  "scripts": {
+    "start": "chcp 65001 > nul && electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.handcontrol.douyin",
+    "productName": "手势控制抖音",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "control.html",
+      "recognition.html",
+      "package.json",
+      "mediapipe/**/*"
+    ],
+    "asarUnpack": [
+      "mediapipe/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": null
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "icon.icns"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "手势控制抖音"
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "@mediapipe/camera_utils": "^0.3.1675466862",
+    "@mediapipe/drawing_utils": "^0.3.1675466124",
+    "@mediapipe/hands": "^0.4.1675469240",
+    "ws": "^8.20.1"
+  }
+}
